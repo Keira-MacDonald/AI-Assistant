@@ -1,8 +1,7 @@
 Hi, I’m @Keira-MacDonald :)
-I’m a current student at University of Western Ontario pursuing computer science.
-I'm looking for opportunities in summer internships, and collaborating on software projects.
-If you would like to reach me, my email is Keira.Sian.MacDonald@gmail.com.
-Fun fact, I'm also pursuing astrophysics on top of computer science, and I am the bass clarinetist of the Western Wind Ensemble. :)
+I’m a current student at University of Western Ontario pursuing computer science and software engineering.
+I am also an expert back-end/API developer and am proficient in Java, JS/CSS/HTML, Python, C++, and R.
+Please reach me at Keira.Sian.MacDonald@gmail.com.
 
 <!---
 Keira-MacDonald/Keira-MacDonald is a ✨ special ✨ repository because its `README.md` (this file) appears on your GitHub profile.
