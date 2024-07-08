@@ -1,0 +1,840 @@
+//
+// Source code recreated from a .class file by IntelliJ IDEA
+// (powered by FernFlower decompiler)
+//
+
+package weka.core.converters;
+
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.Reader;
+import java.io.StreamTokenizer;
+import java.io.StringReader;
+import java.net.URL;
+import java.text.ParseException;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+import weka.core.Attribute;
+import weka.core.DenseInstance;
+import weka.core.Instance;
+import weka.core.Instances;
+import weka.core.RevisionHandler;
+import weka.core.RevisionUtils;
+import weka.core.SparseInstance;
+import weka.core.Utils;
+
+public class ArffLoader extends AbstractFileLoader implements BatchConverter, IncrementalConverter, URLSourcedLoader {
+    static final long serialVersionUID = 2726929550544048587L;
+    public static String FILE_EXTENSION = ".arff";
+    public static String FILE_EXTENSION_COMPRESSED;
+    protected String m_URL = "http://";
+    protected transient Reader m_sourceReader = null;
+    protected transient ArffReader m_ArffReader = null;
+    protected boolean m_retainStringVals;
+
+    public ArffLoader() {
+    }
+
+    public String globalInfo() {
+        return "Reads a source that is in arff (attribute relation file format) format. ";
+    }
+
+    public String retainStringValsTipText() {
+        return "If true then the values of string attributes are retained in memory when reading incrementally. Leave this set to false when using incremental classifiers in the Knowledge Flow.";
+    }
+
+    public void setRetainStringVals(boolean retain) {
+        this.m_retainStringVals = retain;
+    }
+
+    public boolean getRetainStringVals() {
+        return this.m_retainStringVals;
+    }
+
+    public String getFileExtension() {
+        return FILE_EXTENSION;
+    }
+
+    public String[] getFileExtensions() {
+        return new String[]{FILE_EXTENSION, FILE_EXTENSION_COMPRESSED};
+    }
+
+    public String getFileDescription() {
+        return "Arff data files";
+    }
+
+    public void reset() throws IOException {
+        this.m_structure = null;
+        this.m_ArffReader = null;
+        this.setRetrieval(0);
+        if (this.m_File != null && !(new File(this.m_File)).isDirectory()) {
+            this.setFile(new File(this.m_File));
+        } else if (this.m_URL != null && !this.m_URL.equals("http://")) {
+            this.setURL(this.m_URL);
+        }
+
+    }
+
+    public void setSource(URL url) throws IOException {
+        this.m_structure = null;
+        this.setRetrieval(0);
+        this.setSource(url.openStream());
+        this.m_URL = url.toString();
+        this.m_File = null;
+    }
+
+    public File retrieveFile() {
+        return new File(this.m_File);
+    }
+
+    public void setFile(File file) throws IOException {
+        this.m_File = file.getPath();
+        this.setSource((File)file);
+    }
+
+    public void setURL(String url) throws IOException {
+        this.m_URL = url;
+        this.setSource(new URL(url));
+    }
+
+    public String retrieveURL() {
+        return this.m_URL;
+    }
+
+    public void setSource(InputStream in) throws IOException {
+        this.m_File = (new File(System.getProperty("user.dir"))).getAbsolutePath();
+        this.m_URL = "http://";
+        this.m_sourceReader = new BufferedReader(new InputStreamReader(in));
+    }
+
+    public Instances getStructure() throws IOException {
+        if (this.m_structure == null) {
+            if (this.m_sourceReader == null) {
+                throw new IOException("No source has been specified");
+            }
+
+            try {
+                this.m_ArffReader = new ArffReader(this.m_sourceReader, 1, this.getRetrieval() == 1);
+                this.m_ArffReader.setRetainStringValues(this.getRetainStringVals());
+                this.m_structure = this.m_ArffReader.getStructure();
+            } catch (Exception var2) {
+                throw new IOException("Unable to determine structure as arff (Reason: " + var2.toString() + ").");
+            }
+        }
+
+        return new Instances(this.m_structure, 0);
+    }
+
+    public Instances getDataSet() throws IOException {
+        Instances insts = null;
+
+        try {
+            if (this.m_sourceReader == null) {
+                throw new IOException("No source has been specified");
+            }
+
+            if (this.getRetrieval() == 2) {
+                throw new IOException("Cannot mix getting Instances in both incremental and batch modes");
+            }
+
+            this.setRetrieval(1);
+            if (this.m_structure == null) {
+                this.getStructure();
+            }
+
+            insts = new Instances(this.m_structure, 0);
+
+            Instance inst;
+            while((inst = this.m_ArffReader.readInstance(this.m_structure)) != null) {
+                insts.add(inst);
+            }
+        } finally {
+            if (this.m_sourceReader != null) {
+                this.m_sourceReader.close();
+            }
+
+        }
+
+        return insts;
+    }
+
+    public Instance getNextInstance(Instances structure) throws IOException {
+        this.m_structure = structure;
+        if (this.getRetrieval() == 1) {
+            throw new IOException("Cannot mix getting Instances in both incremental and batch modes");
+        } else {
+            this.setRetrieval(2);
+            Instance current = null;
+            if (this.m_sourceReader != null) {
+                current = this.m_ArffReader.readInstance(this.m_structure);
+            }
+
+            if (this.m_sourceReader != null && current == null) {
+                try {
+                    this.m_sourceReader.close();
+                    this.m_sourceReader = null;
+                } catch (Exception var4) {
+                    var4.printStackTrace();
+                }
+            }
+
+            return current;
+        }
+    }
+
+    public String getRevision() {
+        return RevisionUtils.extract("$Revision: 14534 $");
+    }
+
+    public static void main(String[] args) {
+        runFileLoader(new ArffLoader(), args);
+    }
+
+    static {
+        FILE_EXTENSION_COMPRESSED = FILE_EXTENSION + ".gz";
+    }
+
+    public static class ArffReader implements RevisionHandler {
+        protected StreamTokenizer m_Tokenizer;
+        protected double[] m_ValueBuffer;
+        protected int[] m_IndicesBuffer;
+        protected List<Integer> m_stringAttIndices;
+        protected Instances m_Data;
+        protected int m_Lines;
+        protected boolean m_batchMode;
+        protected boolean m_retainStringValues;
+        protected String m_fieldSeparator;
+        protected List<String> m_enclosures;
+
+        public ArffReader(Reader reader) throws IOException {
+            this.m_batchMode = true;
+            this.m_retainStringValues = false;
+            this.m_retainStringValues = true;
+            this.m_batchMode = true;
+            this.m_Tokenizer = new StreamTokenizer(reader);
+            this.initTokenizer();
+            this.readHeader(1000);
+            this.initBuffers();
+
+            Instance inst;
+            while((inst = this.readInstance(this.m_Data)) != null) {
+                this.m_Data.add(inst);
+            }
+
+            this.compactify();
+        }
+
+        public ArffReader(Reader reader, int capacity) throws IOException {
+            this(reader, capacity, true);
+        }
+
+        public ArffReader(Reader reader, int capacity, boolean batch) throws IOException {
+            this.m_batchMode = true;
+            this.m_retainStringValues = false;
+            this.m_batchMode = batch;
+            if (batch) {
+                this.m_retainStringValues = true;
+            }
+
+            if (capacity < 0) {
+                throw new IllegalArgumentException("Capacity has to be positive!");
+            } else {
+                this.m_Tokenizer = new StreamTokenizer(reader);
+                this.initTokenizer();
+                this.readHeader(capacity);
+                this.initBuffers();
+            }
+        }
+
+        public ArffReader(Reader reader, Instances template, int lines, String... fieldSepAndEnclosures) throws IOException {
+            this(reader, template, lines, 100, true, fieldSepAndEnclosures);
+
+            Instance inst;
+            while((inst = this.readInstance(this.m_Data)) != null) {
+                this.m_Data.add(inst);
+            }
+
+            this.compactify();
+        }
+
+        public ArffReader(Reader reader, Instances template, int lines, int capacity, String... fieldSepAndEnclosures) throws IOException {
+            this(reader, template, lines, capacity, false, fieldSepAndEnclosures);
+        }
+
+        public ArffReader(Reader reader, Instances template, int lines, int capacity, boolean batch, String... fieldSepAndEnclosures) throws IOException {
+            this.m_batchMode = true;
+            this.m_retainStringValues = false;
+            this.m_batchMode = batch;
+            if (batch) {
+                this.m_retainStringValues = true;
+            }
+
+            if (fieldSepAndEnclosures != null && fieldSepAndEnclosures.length > 0) {
+                if (fieldSepAndEnclosures[0] != null && fieldSepAndEnclosures[0].length() > 0) {
+                    this.m_fieldSeparator = fieldSepAndEnclosures[0];
+                }
+
+                if (fieldSepAndEnclosures.length > 1) {
+                    this.m_enclosures = new ArrayList();
+
+                    for(int i = 1; i < fieldSepAndEnclosures.length; ++i) {
+                        if (fieldSepAndEnclosures[i] != null && fieldSepAndEnclosures[i].length() > 0) {
+                            this.m_enclosures.add(fieldSepAndEnclosures[i]);
+                        }
+                    }
+
+                    if (this.m_enclosures.size() == 0) {
+                        this.m_enclosures = null;
+                    }
+                }
+            }
+
+            this.m_Lines = lines;
+            this.m_Tokenizer = new StreamTokenizer(reader);
+            this.initTokenizer();
+            this.m_Data = new Instances(template, capacity);
+            this.initBuffers();
+        }
+
+        protected void initBuffers() {
+            this.m_ValueBuffer = new double[this.m_Data.numAttributes()];
+            this.m_IndicesBuffer = new int[this.m_Data.numAttributes()];
+            this.m_stringAttIndices = new ArrayList();
+            if (this.m_Data.checkForStringAttributes()) {
+                for(int i = 0; i < this.m_Data.numAttributes(); ++i) {
+                    if (this.m_Data.attribute(i).isString()) {
+                        this.m_stringAttIndices.add(i);
+                    }
+                }
+            }
+
+        }
+
+        protected void compactify() {
+            if (this.m_Data != null) {
+                this.m_Data.compactify();
+            }
+
+        }
+
+        protected void errorMessage(String msg) throws IOException {
+            String str = msg + ", read " + this.m_Tokenizer.toString();
+            if (this.m_Lines > 0) {
+                int line = Integer.parseInt(str.replaceAll(".* line ", ""));
+                str = str.replaceAll(" line .*", " line " + (this.m_Lines + line - 1));
+            }
+
+            throw new IOException(str);
+        }
+
+        public int getLineNo() {
+            return this.m_Lines + this.m_Tokenizer.lineno();
+        }
+
+        protected void getFirstToken() throws IOException {
+            while(this.m_Tokenizer.nextToken() == 10) {
+            }
+
+            if (this.m_Tokenizer.ttype != 39 && this.m_Tokenizer.ttype != 34) {
+                if (this.m_Tokenizer.ttype == -3 && this.m_Tokenizer.sval.equals("?")) {
+                    this.m_Tokenizer.ttype = 63;
+                }
+            } else {
+                this.m_Tokenizer.ttype = -3;
+            }
+
+        }
+
+        protected void getIndex() throws IOException {
+            if (this.m_Tokenizer.nextToken() == 10) {
+                this.errorMessage("premature end of line");
+            }
+
+            if (this.m_Tokenizer.ttype == -1) {
+                this.errorMessage("premature end of file");
+            }
+
+        }
+
+        protected void getLastToken(boolean endOfFileOk) throws IOException {
+            if (this.m_Tokenizer.nextToken() != 10 && (this.m_Tokenizer.ttype != -1 || !endOfFileOk)) {
+                this.errorMessage("end of line expected");
+            }
+
+        }
+
+        protected double getInstanceWeight() throws IOException {
+            double weight = Double.NaN;
+            this.m_Tokenizer.nextToken();
+            if (this.m_Tokenizer.ttype != 10 && this.m_Tokenizer.ttype != -1) {
+                if (this.m_Tokenizer.ttype == 123) {
+                    this.m_Tokenizer.nextToken();
+                    String weightS = this.m_Tokenizer.sval;
+
+                    try {
+                        weight = Double.parseDouble(weightS);
+                    } catch (NumberFormatException var5) {
+                        return weight;
+                    }
+
+                    this.m_Tokenizer.nextToken();
+                    if (this.m_Tokenizer.ttype != 125) {
+                        this.errorMessage("Problem reading instance weight: } expected");
+                    }
+                }
+
+                return weight;
+            } else {
+                return weight;
+            }
+        }
+
+        protected void getNextToken() throws IOException {
+            if (this.m_Tokenizer.nextToken() == 10) {
+                this.errorMessage("premature end of line");
+            }
+
+            if (this.m_Tokenizer.ttype == -1) {
+                this.errorMessage("premature end of file");
+            } else if (this.m_Tokenizer.ttype != 39 && this.m_Tokenizer.ttype != 34) {
+                if (this.m_Tokenizer.ttype == -3 && this.m_Tokenizer.sval.equals("?")) {
+                    this.m_Tokenizer.ttype = 63;
+                }
+            } else {
+                this.m_Tokenizer.ttype = -3;
+            }
+
+        }
+
+        protected void initTokenizer() {
+            this.m_Tokenizer.resetSyntax();
+            this.m_Tokenizer.whitespaceChars(0, 32);
+            this.m_Tokenizer.wordChars(33, 255);
+            if (this.m_fieldSeparator != null) {
+                this.m_Tokenizer.whitespaceChars(this.m_fieldSeparator.charAt(0), this.m_fieldSeparator.charAt(0));
+            } else {
+                this.m_Tokenizer.whitespaceChars(44, 44);
+            }
+
+            this.m_Tokenizer.commentChar(37);
+            if (this.m_enclosures != null && this.m_enclosures.size() > 0) {
+                Iterator var1 = this.m_enclosures.iterator();
+
+                while(var1.hasNext()) {
+                    String e = (String)var1.next();
+                    this.m_Tokenizer.quoteChar(e.charAt(0));
+                }
+            } else {
+                this.m_Tokenizer.quoteChar(34);
+                this.m_Tokenizer.quoteChar(39);
+            }
+
+            this.m_Tokenizer.ordinaryChar(123);
+            this.m_Tokenizer.ordinaryChar(125);
+            this.m_Tokenizer.eolIsSignificant(true);
+        }
+
+        public Instance readInstance(Instances structure) throws IOException {
+            return this.readInstance(structure, true);
+        }
+
+        public Instance readInstance(Instances structure, boolean flag) throws IOException {
+            return this.getInstance(structure, flag);
+        }
+
+        protected Instance getInstance(Instances structure, boolean flag) throws IOException {
+            this.m_Data = structure;
+            if (this.m_Data.numAttributes() == 0) {
+                this.errorMessage("no header information available");
+            }
+
+            this.getFirstToken();
+            if (this.m_Tokenizer.ttype == -1) {
+                return null;
+            } else {
+                return this.m_Tokenizer.ttype == 123 ? this.getInstanceSparse(flag) : this.getInstanceFull(flag);
+            }
+        }
+
+        protected Instance getInstanceSparse(boolean flag) throws IOException {
+            int numValues = 0;
+            int maxIndex = -1;
+            if (!this.m_batchMode && !this.m_retainStringValues && this.m_stringAttIndices != null) {
+                for(int i = 0; i < this.m_stringAttIndices.size(); ++i) {
+                    this.m_Data.attribute((Integer)this.m_stringAttIndices.get(i)).setStringValue((String)null);
+                }
+            }
+
+            while(true) {
+                this.getIndex();
+                if (this.m_Tokenizer.ttype == 125) {
+                    double weight = 1.0;
+                    if (flag) {
+                        weight = this.getInstanceWeight();
+                        if (!Double.isNaN(weight)) {
+                            this.getLastToken(true);
+                        } else {
+                            weight = 1.0;
+                        }
+                    }
+
+                    double[] tempValues = new double[numValues];
+                    int[] tempIndices = new int[numValues];
+                    System.arraycopy(this.m_ValueBuffer, 0, tempValues, 0, numValues);
+                    System.arraycopy(this.m_IndicesBuffer, 0, tempIndices, 0, numValues);
+                    Instance inst = new SparseInstance(weight, tempValues, tempIndices, this.m_Data.numAttributes());
+                    inst.setDataset(this.m_Data);
+                    return inst;
+                }
+
+                try {
+                    this.m_IndicesBuffer[numValues] = Integer.valueOf(this.m_Tokenizer.sval);
+                } catch (NumberFormatException var13) {
+                    this.errorMessage("index number expected");
+                }
+
+                if (this.m_IndicesBuffer[numValues] <= maxIndex) {
+                    this.errorMessage("indices have to be ordered");
+                }
+
+                if (this.m_IndicesBuffer[numValues] < 0 || this.m_IndicesBuffer[numValues] >= this.m_Data.numAttributes()) {
+                    this.errorMessage("index out of bounds");
+                }
+
+                maxIndex = this.m_IndicesBuffer[numValues];
+                this.getNextToken();
+                if (this.m_Tokenizer.ttype == 63) {
+                    this.m_ValueBuffer[numValues] = Utils.missingValue();
+                } else {
+                    if (this.m_Tokenizer.ttype != -3) {
+                        this.errorMessage("not a valid value");
+                    }
+
+                    switch (this.m_Data.attribute(this.m_IndicesBuffer[numValues]).type()) {
+                        case 0:
+                            try {
+                                this.m_ValueBuffer[numValues] = Double.valueOf(this.m_Tokenizer.sval);
+                            } catch (NumberFormatException var12) {
+                                this.errorMessage("number expected");
+                            }
+                            break;
+                        case 1:
+                            int valIndex = this.m_Data.attribute(this.m_IndicesBuffer[numValues]).indexOfValue(this.m_Tokenizer.sval);
+                            if (valIndex == -1) {
+                                this.errorMessage("nominal value not declared in header");
+                            }
+
+                            this.m_ValueBuffer[numValues] = (double)valIndex;
+                            break;
+                        case 2:
+                            if (!this.m_batchMode && !this.m_retainStringValues) {
+                                this.m_ValueBuffer[numValues] = 0.0;
+                                this.m_Data.attribute(this.m_IndicesBuffer[numValues]).addStringValue(this.m_Tokenizer.sval);
+                            } else {
+                                this.m_ValueBuffer[numValues] = (double)this.m_Data.attribute(this.m_IndicesBuffer[numValues]).addStringValue(this.m_Tokenizer.sval);
+                            }
+                            break;
+                        case 3:
+                            try {
+                                this.m_ValueBuffer[numValues] = this.m_Data.attribute(this.m_IndicesBuffer[numValues]).parseDate(this.m_Tokenizer.sval);
+                            } catch (ParseException var11) {
+                                this.errorMessage("unparseable date: " + this.m_Tokenizer.sval);
+                            }
+                            break;
+                        case 4:
+                            try {
+                                ArffReader arff = new ArffReader(new StringReader(this.m_Tokenizer.sval), this.m_Data.attribute(this.m_IndicesBuffer[numValues]).relation(), 0, new String[0]);
+                                Instances data = arff.getData();
+                                this.m_ValueBuffer[numValues] = (double)this.m_Data.attribute(this.m_IndicesBuffer[numValues]).addRelation(data);
+                                break;
+                            } catch (Exception var10) {
+                                throw new IOException(var10.toString() + " of line " + this.getLineNo());
+                            }
+                        default:
+                            this.errorMessage("unknown attribute type in column " + this.m_IndicesBuffer[numValues]);
+                    }
+                }
+
+                ++numValues;
+            }
+        }
+
+        protected Instance getInstanceFull(boolean flag) throws IOException {
+            double[] instance = new double[this.m_Data.numAttributes()];
+
+            for(int i = 0; i < this.m_Data.numAttributes(); ++i) {
+                if (i > 0) {
+                    this.getNextToken();
+                }
+
+                if (this.m_Tokenizer.ttype == 63) {
+                    instance[i] = Utils.missingValue();
+                } else {
+                    if (this.m_Tokenizer.ttype != -3) {
+                        this.errorMessage("not a valid value");
+                    }
+
+                    switch (this.m_Data.attribute(i).type()) {
+                        case 0:
+                            try {
+                                instance[i] = Double.valueOf(this.m_Tokenizer.sval);
+                            } catch (NumberFormatException var9) {
+                                this.errorMessage("number expected");
+                            }
+                            break;
+                        case 1:
+                            int index = this.m_Data.attribute(i).indexOfValue(this.m_Tokenizer.sval);
+                            if (index == -1) {
+                                this.errorMessage("nominal value not declared in header");
+                            }
+
+                            instance[i] = (double)index;
+                            break;
+                        case 2:
+                            if (!this.m_batchMode && !this.m_retainStringValues) {
+                                instance[i] = 0.0;
+                                this.m_Data.attribute(i).setStringValue(this.m_Tokenizer.sval);
+                                break;
+                            }
+
+                            instance[i] = (double)this.m_Data.attribute(i).addStringValue(this.m_Tokenizer.sval);
+                            break;
+                        case 3:
+                            try {
+                                instance[i] = this.m_Data.attribute(i).parseDate(this.m_Tokenizer.sval);
+                            } catch (ParseException var8) {
+                                this.errorMessage("unparseable date: " + this.m_Tokenizer.sval);
+                            }
+                            break;
+                        case 4:
+                            try {
+                                ArffReader arff = new ArffReader(new StringReader(this.m_Tokenizer.sval), this.m_Data.attribute(i).relation(), 0, new String[0]);
+                                Instances data = arff.getData();
+                                instance[i] = (double)this.m_Data.attribute(i).addRelation(data);
+                                break;
+                            } catch (Exception var7) {
+                                throw new IOException(var7.toString() + " of line " + this.getLineNo());
+                            }
+                        default:
+                            this.errorMessage("unknown attribute type in column " + i);
+                    }
+                }
+            }
+
+            double weight = 1.0;
+            if (flag) {
+                weight = this.getInstanceWeight();
+                if (!Double.isNaN(weight)) {
+                    this.getLastToken(true);
+                } else {
+                    weight = 1.0;
+                }
+            }
+
+            Instance inst = new DenseInstance(weight, instance);
+            inst.setDataset(this.m_Data);
+            return inst;
+        }
+
+        protected void readHeader(int capacity) throws IOException {
+            this.m_Lines = 0;
+            String relationName = "";
+            this.getFirstToken();
+            if (this.m_Tokenizer.ttype == -1) {
+                this.errorMessage("premature end of file");
+            }
+
+            if ("@relation".equalsIgnoreCase(this.m_Tokenizer.sval)) {
+                this.getNextToken();
+                relationName = this.m_Tokenizer.sval;
+                this.getLastToken(false);
+            } else {
+                this.errorMessage("keyword @relation expected");
+            }
+
+            ArrayList<Attribute> attributes = new ArrayList();
+            this.getFirstToken();
+            if (this.m_Tokenizer.ttype == -1) {
+                this.errorMessage("premature end of file");
+            }
+
+            while("@attribute".equalsIgnoreCase(this.m_Tokenizer.sval)) {
+                attributes = this.parseAttribute(attributes);
+            }
+
+            if (!"@data".equalsIgnoreCase(this.m_Tokenizer.sval)) {
+                this.errorMessage("keyword @data expected");
+            }
+
+            if (attributes.size() == 0) {
+                this.errorMessage("no attributes declared");
+            }
+
+            this.m_Data = new Instances(relationName, attributes, capacity);
+        }
+
+        protected ArrayList<Attribute> parseAttribute(ArrayList<Attribute> attributes) throws IOException {
+            this.getNextToken();
+            String attributeName = this.m_Tokenizer.sval;
+            this.getNextToken();
+            Attribute format;
+            if (this.m_Tokenizer.ttype == -3) {
+                if (!this.m_Tokenizer.sval.equalsIgnoreCase("real") && !this.m_Tokenizer.sval.equalsIgnoreCase("integer") && !this.m_Tokenizer.sval.equalsIgnoreCase("numeric")) {
+                    if (this.m_Tokenizer.sval.equalsIgnoreCase("string")) {
+                        format = new Attribute(attributeName, (ArrayList)null, attributes.size());
+                        format.setWeight(this.getAttributeWeight());
+                        this.readTillEOL();
+                        attributes.add(format);
+                    } else if (this.m_Tokenizer.sval.equalsIgnoreCase("date")) {
+                        format = null;
+                        this.m_Tokenizer.nextToken();
+                        Attribute att;
+                        if (this.m_Tokenizer.ttype == 123) {
+                            this.m_Tokenizer.pushBack();
+                            att = new Attribute(attributeName, format, attributes.size());
+                            att.setWeight(this.getAttributeWeight());
+                            attributes.add(att);
+                            this.readTillEOL();
+                        } else if (this.m_Tokenizer.ttype != 10) {
+                            if (this.m_Tokenizer.ttype != -3 && this.m_Tokenizer.ttype != 39 && this.m_Tokenizer.ttype != 34) {
+                                this.errorMessage("not a valid date format");
+                            }
+
+                            String format = this.m_Tokenizer.sval;
+                            att = new Attribute(attributeName, format, attributes.size());
+                            att.setWeight(this.getAttributeWeight());
+                            attributes.add(att);
+                            this.readTillEOL();
+                        } else {
+                            this.m_Tokenizer.pushBack();
+                            attributes.add(new Attribute(attributeName, format, attributes.size()));
+                        }
+                    } else if (this.m_Tokenizer.sval.equalsIgnoreCase("relational")) {
+                        double weight = this.getAttributeWeight();
+                        this.readTillEOL();
+                        ArrayList<Attribute> atts = attributes;
+                        attributes = new ArrayList();
+                        this.getFirstToken();
+                        if (this.m_Tokenizer.ttype == -1) {
+                            this.errorMessage("premature end of file");
+                        }
+
+                        label64:
+                        while(true) {
+                            while(!"@attribute".equalsIgnoreCase(this.m_Tokenizer.sval)) {
+                                if ("@end".equalsIgnoreCase(this.m_Tokenizer.sval)) {
+                                    this.getNextToken();
+                                    if (!attributeName.equalsIgnoreCase(this.m_Tokenizer.sval)) {
+                                        this.errorMessage("declaration of subrelation " + attributeName + " must be terminated by @end " + attributeName);
+                                    }
+
+                                    Instances relation = new Instances(attributeName, attributes, 0);
+                                    attributes = atts;
+                                    Attribute att = new Attribute(attributeName, relation, atts.size());
+                                    att.setWeight(weight);
+                                    atts.add(att);
+                                    break label64;
+                                }
+
+                                this.errorMessage("declaration of subrelation " + attributeName + " must be terminated by @end " + attributeName);
+                            }
+
+                            attributes = this.parseAttribute(attributes);
+                        }
+                    } else {
+                        this.errorMessage("no valid attribute type or invalid enumeration");
+                    }
+                } else {
+                    format = new Attribute(attributeName, attributes.size());
+                    format.setWeight(this.getAttributeWeight());
+                    attributes.add(format);
+                    this.readTillEOL();
+                }
+            } else {
+                ArrayList<String> attributeValues = new ArrayList();
+                this.m_Tokenizer.pushBack();
+                if (this.m_Tokenizer.nextToken() != 123) {
+                    this.errorMessage("{ expected at beginning of enumeration");
+                }
+
+                while(this.m_Tokenizer.nextToken() != 125) {
+                    if (this.m_Tokenizer.ttype == 10) {
+                        this.errorMessage("} expected at end of enumeration");
+                    } else {
+                        attributeValues.add(this.m_Tokenizer.sval);
+                    }
+                }
+
+                format = new Attribute(attributeName, attributeValues, attributes.size());
+                format.setWeight(this.getAttributeWeight());
+                attributes.add(format);
+                this.readTillEOL();
+            }
+
+            this.getLastToken(false);
+            this.getFirstToken();
+            if (this.m_Tokenizer.ttype == -1) {
+                this.errorMessage("premature end of file");
+            }
+
+            return attributes;
+        }
+
+        protected void readTillEOL() throws IOException {
+            while(this.m_Tokenizer.nextToken() != 10) {
+            }
+
+            this.m_Tokenizer.pushBack();
+        }
+
+        protected double getAttributeWeight() throws IOException {
+            double weight = 1.0;
+            this.m_Tokenizer.nextToken();
+            if (this.m_Tokenizer.ttype != 10 && this.m_Tokenizer.ttype != -1) {
+                if (this.m_Tokenizer.ttype == 123) {
+                    this.m_Tokenizer.nextToken();
+
+                    try {
+                        weight = Double.parseDouble(this.m_Tokenizer.sval);
+                    } catch (NumberFormatException var4) {
+                        this.errorMessage("Problem reading attribute weight " + var4.getMessage());
+                    }
+
+                    this.m_Tokenizer.nextToken();
+                    if (this.m_Tokenizer.ttype != 125) {
+                        this.errorMessage("Problem reading attribute weight: } expected");
+                    }
+                }
+
+                return weight;
+            } else {
+                this.m_Tokenizer.pushBack();
+                return weight;
+            }
+        }
+
+        public Instances getStructure() {
+            return new Instances(this.m_Data, 0);
+        }
+
+        public Instances getData() {
+            return this.m_Data;
+        }
+
+        public void setRetainStringValues(boolean retain) {
+            this.m_retainStringValues = retain;
+        }
+
+        public boolean getRetainStringValues() {
+            return this.m_retainStringValues;
+        }
+
+        public String getRevision() {
+            return RevisionUtils.extract("$Revision: 14534 $");
+        }
+    }
+}
